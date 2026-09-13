@@ -1,0 +1,77 @@
+1. As a customer,
+I want to log in with my id and password
+so that I can access my own accounts.
+
+2. As a Banker,
+I want to log in with my banker credentials
+so that the system shows me administrative capabilities instead of customer's account view.
+
+3. As a customer,
+I want my password to be stored in encrypted form
+so that my credentials are not exposed if the files are read directly.
+
+4. As a customer,
+I want my account locked for 1 minute after 3 failed login attemps
+so that the person guessing my password repeatedly can not get in.
+
+5. As a customer,
+I want to know how long I have to wait after a lockout
+so that I know when I try logging in again.
+
+6. As a banker,
+i want to create a new customer record with name and id
+so that the customer can be recognized by the system and use it.
+
+7. As a new customer,
+I want to open a checking account, a saving account or both
+so that I can choose the account type with my needs.
+
+8.As a customer,
+I want to deposit money into my checking, saving account, or someone else's account
+so that my balance changed based on the funds I added.
+
+9. As a customer,
+I want to withdraw money from my checking or saving account,
+so that I can access my funds when needed.
+
+10. As a customer, I want to transfer money between my own checking and saving accounts
+so that I can move my funds.
+
+11. As a customer,
+I want to transfer money to another customer's account
+so that I can pay or send money to someone else.
+
+12. As a customer,
+i want my account deactivated after 2 overdrafts
+so that repeated negative balance activity is contained
+
+13. As a customer,
+I want my account reactivated auto once my balance is positive and paid the outstanding fees
+so that I can use the account without contacting the bank support team.
+
+14. As a customer, I want every transaction recorded with its type, date, resulting balance
+so that I have a record for the account activity.
+
+15. As a customer,
+I want to view a detailed statement with total balance and transaction list
+so that I can review my account.
+
+16. As a customer,
+I want to filter my transaction by today, yesterday, last week, last 7 days, last month, last 30 days
+so that I can quickly find activity from specific time.
+
+17. As a customer,
+I want to filter my transaction by custom date
+so that I can look activity outside the standard periods.
+
+18. As a customer,
+I want each of my card to be limited with daily withdrawal
+so that my spending stays within the limit boundaries of the card.
+
+19. As a customer,
+I want my transfer money differ based on whether it will be within my accounts or someone else's account
+so that I am not being *****************
+
+20. As a banker,
+I want to look up customer's account details
+so that I can help with their inquiries.
