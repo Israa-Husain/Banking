@@ -1,8 +1,10 @@
 package com.ga.ACME;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public abstract class Account implements IAuthenticatable,ITransactable{
     private String accountNumber;
@@ -18,15 +20,26 @@ public abstract class Account implements IAuthenticatable,ITransactable{
     protected static final int maxFailedAttempts=3;
     private double unpaidFees;
     private int overdraftCount=0;
+    private Card card;
 
     private List<Transaction> transactionList = new ArrayList<>();
 
-    protected Account(String accountNumber, String password, IPasswordManager passwordManager){
+    protected Account(String accountNumber, double balance, String password, Card card,IPasswordManager passwordManager){
         this.accountNumber = accountNumber;
+        this.card = card;
+        this.balance = balance;
         this.passwordManager = passwordManager;
         this.passwordHash = passwordManager.hashPassword(password);
-        this.balance = 0;
-        this.isActive = true;
+//        this.balance = 0;
+//        this.isActive = true;
+    }
+
+    public void statement(boolean isActive, int overdraftCount, double unpaidFees, List<Transaction> transactions){
+        this.isActive = isActive;
+        this.overdraftCount = overdraftCount;
+        this.unpaidFees = unpaidFees;
+        this.transactionList.clear();
+        this.transactionList.addAll(transactions);
     }
 
     public abstract String getAccountType();
@@ -45,36 +58,36 @@ public abstract class Account implements IAuthenticatable,ITransactable{
     }
 
     @Override
+    public void lockStatus() throws AccountLockedException {
+        if(isLocked()){
+            long remaining = Math.max(1, Duration.between(LocalDateTime.now(), lockTime.plusSeconds(lockoutDuration)).getSeconds());
+            throw new AccountLockedException("Account locked. Try again in "+remaining+" seconds");
+        }
+    }
+
+    @Override
     public void recordFailedAttempts() {
         failedLoginAttempts++;
         if(failedLoginAttempts>=maxFailedAttempts){
             isLocked = true;
-            lockTime = lockTime.plusSeconds(lockoutDuration);
+            lockTime = LocalDateTime.now();
         }
     }
 
     public boolean login(String password) throws AccountLockedException,InvalidCredentialsException{
-        if(isLocked()){
-//            long remainingSeconds = Long.parseLong(lockTime.format(DateTimeFormatter.ISO_DATE_TIME)) % 60;
-            throw new AccountLockedException("Account locked"); //ADD THE REMAINING SECONDS FOR THE LOCKEDTIME
-        }
-        if(passwordManager.verifyPassword(password, passwordHash)){
+        lockStatus();
+        if(authenticate(password)){
             resetFailedAttempt();
             return true;
         }
         recordFailedAttempts();
-        throw new InvalidCredentialsException("Incorrect password");
+        throw new InvalidCredentialsException("Incorrect password for account "+accountNumber);
     }
 
     @Override
     public boolean isLocked() {
-        if(isLocked&&lockTime!=null){ //REMOVE THIS CONDITION AND KEEP THE REST, CHECK IF IT WORKS
-            LocalDateTime unlock = lockTime.plusSeconds(lockoutDuration);
-            if(LocalDateTime.now().isAfter(unlock)){
-                isLocked = false;
-                lockTime = null;
-                failedLoginAttempts = 0;
-            }
+        if (isLocked && lockTime != null && !LocalDateTime.now().isBefore(lockTime.plusSeconds(lockoutDuration))) {
+            resetFailedAttempt();
         }
         return isLocked;
     }
@@ -95,11 +108,7 @@ public abstract class Account implements IAuthenticatable,ITransactable{
     }
 
     private void addTransaction(TransactionType type, double amount){
-
-
-        transactionList.add(new Transaction("",accountNumber,type,amount,LocalDateTime.now(),balance));
-                                      //String transactionId, String accountNumber, TransactionType type, double amount, LocalDateTime timestamp, double resultingBalance
-                                     //FIGURE OUT A WAY TO GET TRANSACTIONID VALUE FROM TRANSACTION
+        transactionList.add(new Transaction(UUID.randomUUID().toString(),accountNumber,type,amount,LocalDateTime.now(),balance));
     }
 
 
@@ -112,12 +121,17 @@ public abstract class Account implements IAuthenticatable,ITransactable{
             throw new OverdraftLimitException("you can not withdraw more than $100 while having a negative balance");
         }
 
+        if(!card.canWithdraw(amount)){
+            throw new CardLimitExceededException("Daily withdrawal limit exceeded");
+        }
+
         double money = balance - amount;
         if(money<0){
             overdraftCount++;
             balance = money;
             unpaidFees +=35;
             addTransaction(TransactionType.withdraw, amount);
+            card.recordUsage(Card.withdraw, amount);
             balance-=35;
             addTransaction(TransactionType.overdraftFee,35);
 
@@ -127,22 +141,37 @@ public abstract class Account implements IAuthenticatable,ITransactable{
             return;
         }
         balance=money;
+        card.recordUsage(Card.withdraw,amount);
         addTransaction(TransactionType.withdraw,amount);
     }
 
-    @Override
-    public void deposit(double amount) throws CardLimitExceededException, OverdraftLimitException, AccountDeactivatedException,InvalidAmountException {
+
+    public void deposit(double amount, boolean ownAccount) throws CardLimitExceededException, OverdraftLimitException, AccountDeactivatedException,InvalidAmountException {
         checkAccountActivity();
         amountValidation(amount);
 
+        String operation = ownAccount? Card.ownAccountDeposit : Card.deposit;
+        if(!card.canDeposit(amount, ownAccount)){
+            throw new CardLimitExceededException("Daily deposit limit exceeded");
+        }
         balance+=amount;
+        card.recordUsage(operation,amount);
+
         if(balance>0 && unpaidFees>0){
             double payment = Math.min(balance, unpaidFees);
             balance-=payment;
             unpaidFees-=payment;
             addTransaction(TransactionType.overdraftFee,payment);
         }
+        if(balance>0 && unpaidFees==0){
+            isActive = true;
+        }
         addTransaction(TransactionType.deposit, amount);
+    }
+
+    @Override
+    public void deposit(double amount) throws CardLimitExceededException, OverdraftLimitException, AccountDeactivatedException, InvalidAmountException {
+        deposit(amount,false);
     }
 
     public void chargeOverdraftFees() throws OverdraftLimitException{
@@ -154,33 +183,90 @@ public abstract class Account implements IAuthenticatable,ITransactable{
         }
     }
 
-//    @Override
-//    public void transfer(double amount, boolean ownAccount) throws CardLimitExceededException, OverdraftLimitException, AccountDeactivatedException,InvalidAmountException {
-//        checkAccountActivity();
-//        amountValidation(amount);
-//        String operation= ownAccount? deposit(amount) : withdraw(amount);
-//
-//
-//
-//
-//    }
 
-    public void transferOut(double amount) throws AccountDeactivatedException, InvalidAmountException, OverdraftLimitException, CardLimitExceededException {
-        withdraw(amount);
+    public void transferOut(double amount, boolean ownAccount) throws AccountDeactivatedException, InvalidAmountException, OverdraftLimitException, CardLimitExceededException {
+//        withdraw(amount);
+        checkAccountActivity();
+        amountValidation(amount);
+
+        if(!card.canTransfer(amount,ownAccount)){
+            throw new CardLimitExceededException("Daily transfer limit exceede");
+        }
+
+        if(balance<0 && amount>100){
+            throw new OverdraftLimitException("You can not transfer more than $100 with a negative balance");
+        }
+
+        double money = balance-amount;
+        if(money<0){
+            overdraftCount++;
+            balance= money;
+            unpaidFees+=35;
+            addTransaction(TransactionType.transfer,amount);
+            card.recordUsage(ownAccount? Card.ownAccountTransfer: Card.transfer, amount);
+            balance-=35;
+            addTransaction(TransactionType.overdraftFee, 35);
+            if(overdraftCount>=2){
+                isActive=false;
+            }
+            return;
+        }
+        balance=money;
+        card.recordUsage(ownAccount? Card.ownAccountTransfer: Card.transfer,amount);
+        addTransaction(TransactionType.transfer,amount);
+
     }
-    public void transferIn(double amount) throws AccountDeactivatedException, InvalidAmountException, OverdraftLimitException, CardLimitExceededException {
-        deposit(amount);
+    public void transferIn(double amount,boolean ownAccount) throws AccountDeactivatedException, InvalidAmountException, OverdraftLimitException, CardLimitExceededException {
+//        deposit(amount);
+        checkAccountActivity();
+        amountValidation(amount);
+
+        if(!card.canDeposit(amount,ownAccount)){
+            throw new CardLimitExceededException("Daily deposit limit exceede");
+        }
+
+        balance+=amount;
+        card.recordUsage(ownAccount? Card.ownAccountDeposit:Card.deposit,amount);
+        if(balance>0 && unpaidFees>0){
+            double payment= Math.min(balance,unpaidFees);
+            balance-=payment;
+            unpaidFees-=payment;
+            addTransaction(TransactionType.overdraftFee,payment);
+        }
+
+        if(balance>0 && unpaidFees==0){
+            isActive=true;
+        }
+        addTransaction(TransactionType.transfer,amount);
+    }
+
+    public void addTransferOutTransaction(double amount){
+        transactionList.add(new Transaction(UUID.randomUUID().toString(),accountNumber,TransactionType.transfer,amount,LocalDateTime.now(),balance));
+    }
+
+    public void addTransferInTransaction(double amount){
+        transactionList.add(new Transaction(UUID.randomUUID().toString(),accountNumber,TransactionType.transfer,amount,LocalDateTime.now(),balance));
     }
 
     public String accountState(){
         StringBuilder sb = new StringBuilder();
-        sb.append("Account: ").append(accountNumber);
-        sb.append("\nBalance: ").append(balance);
+        sb.append("Account: ").append(accountNumber).append("\n");
+        sb.append(getAccountType());
+        sb.append("\nBalance: $").append(balance);
         sb.append("\nStatus: ").append(isActive? "Active":"Deactivated");
         sb.append("\nTransactions: ");
-        transactionList.forEach(t-> sb.append(t));
+        transactionList.forEach(t-> sb.append(" ").append(t).append("\n"));
 
         return sb.toString();
+    }
+
+    void restoreLoginState(int failedLoginAttempts, boolean isLocked, LocalDateTime savedLockTime){
+        this.failedLoginAttempts = Math.max(0,failedLoginAttempts);
+        this.isLocked=isLocked;
+        this.lockTime = savedLockTime;
+        if(this.isLocked && (savedLockTime==null || !LocalDateTime.now().isBefore(savedLockTime.plusSeconds(lockoutDuration)))){
+            resetFailedAttempt();
+        }
     }
 
     //GETTERS
@@ -198,5 +284,33 @@ public abstract class Account implements IAuthenticatable,ITransactable{
 
     public String getPasswordHash() {
         return passwordHash;
+    }
+
+    public Card getCard() {
+        return card;
+    }
+
+    public int getOverdraftCount() {
+        return overdraftCount;
+    }
+
+    public List<Transaction> getTransactionList() {
+        return transactionList;
+    }
+
+    public double getUnpaidFees() {
+        return unpaidFees;
+    }
+
+    public int getFailedLoginAttempts() {
+        return failedLoginAttempts;
+    }
+
+    public LocalDateTime getLockTime() {
+        return lockTime;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 }

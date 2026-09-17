@@ -6,5 +6,6 @@ public interface IAuthenticatable {
     void recordFailedAttempts();
     boolean authenticate(String password);
     boolean login(String password) throws AccountLockedException,InvalidCredentialsException;
+    void lockStatus() throws AccountLockedException;
 
 }

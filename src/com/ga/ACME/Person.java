@@ -1,5 +1,6 @@
 package com.ga.ACME;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -21,11 +22,11 @@ public abstract class Person implements IAuthenticatable{
         this.name = name;
         this.email = email;
         this.phoneNumber = phoneNumber;
+        this.passwordManager = passwordManager;
         this.passwordHash = passwordManager.hashPassword(password);
-        this.passwordManager=passwordManager;
-        this.isLocked = false;
-        this.failedLoginAttempts = 0;
-        this.lockTime = null;
+//        this.isLocked = false;
+//        this.failedLoginAttempts = 0;
+//        this.lockTime = null;
     }
 
     public abstract String getRole(); //return Banker or Customer
@@ -41,26 +42,22 @@ public abstract class Person implements IAuthenticatable{
     }
 
     public boolean login(String password) throws AccountLockedException,InvalidCredentialsException{
-        if(isLocked()){
-//            long remainingSeconds = Long.parseLong(lockTime.format(DateTimeFormatter.ISO_DATE_TIME)) % 60;
-            throw new AccountLockedException("Account locked"); //ADD THE REMAINING SECONDS FOR THE LOCKEDTIME
-        }
-        if(passwordManager.verifyPassword(password, passwordHash)){
+        lockStatus();
+        if(authenticate(password)){
             resetFailedAttempt();
             return true;
         }
+
         recordFailedAttempts();
         throw new InvalidCredentialsException("Incorrect password for "+id);
     }
 
     @Override
     public boolean isLocked() {
-        if(isLocked&&lockTime!=null){ //REMOVE THIS CONDITION AND KEEP THE REST, CHECK IF IT WORKS
+        if(isLocked&&lockTime!=null){
             LocalDateTime unlock = lockTime.plusSeconds(lockoutDuration);
-            if(LocalDateTime.now().isAfter(unlock)){
-                isLocked = false;
-                lockTime = null;
-                failedLoginAttempts = 0;
+            if(!LocalDateTime.now().isBefore(unlock)){ //Unlock when the full 60 seconds have passed
+                resetFailedAttempt();
             }
         }
         return isLocked;
@@ -71,7 +68,7 @@ public abstract class Person implements IAuthenticatable{
         failedLoginAttempts++;
         if(failedLoginAttempts>=maxFailedAttempts){
             isLocked = true;
-            lockTime = lockTime.plusSeconds(lockoutDuration); //LocalDateTime.now() ???
+            lockTime = LocalDateTime.now();
         }
     }
 
@@ -80,6 +77,23 @@ public abstract class Person implements IAuthenticatable{
         failedLoginAttempts = 0;
         isLocked = false;
         lockTime = null;
+    }
+
+    @Override
+    public void lockStatus() throws AccountLockedException {
+        if(isLocked()){
+            long remaining = Math.max(1, Duration.between(LocalDateTime.now(), lockTime.plusSeconds(lockoutDuration)).getSeconds());
+            throw new AccountLockedException("Account locked. Try again in "+remaining+" seconds");
+        }
+    }
+
+    void restoreLoginState(int failedAttempts, boolean locked, LocalDateTime savedLockTime) {
+        this.failedLoginAttempts = Math.max(0, failedAttempts);
+        this.isLocked = locked;
+        this.lockTime = savedLockTime;
+        if (this.isLocked && (savedLockTime == null || !LocalDateTime.now().isBefore(savedLockTime.plusSeconds(lockoutDuration)))) {
+            resetFailedAttempt();
+        }
     }
 
     //GETTERS

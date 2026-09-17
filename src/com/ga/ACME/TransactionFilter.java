@@ -13,17 +13,22 @@ public class TransactionFilter {
     public static List<Transaction> filter(List<Transaction> transactions, FilterType type, LocalDateTime dateTime){
         LocalDateTime start = switch (type){
             case today -> dateTime.toLocalDate().atStartOfDay();
-            case yesterday -> dateTime.minusDays(1); //dateTime.toLocalDate().minusDays(1) //ERROR
+            case yesterday -> dateTime.toLocalDate().minusDays(1).atStartOfDay();
             case lastWeek -> dateTime.minusWeeks(1);
             case last7Days -> dateTime.minusDays(7);
             case lastMonth -> dateTime.minusMonths(1);
             case last30Days -> dateTime.minusDays(30);
         };
-        return transactions.stream().filter(t -> t.getTimestamp().isBefore(dateTime) && t.getTimestamp().isAfter(start)).collect(Collectors.toList());
+
+        LocalDateTime end = type == FilterType.yesterday? dateTime.toLocalDate().atStartOfDay(): dateTime;
+        if(type==FilterType.yesterday){
+            return transactions.stream().filter(t-> !t.getTimestamp().isBefore(start) && t.getTimestamp().isBefore(end)).toList();
+        }
+        return transactions.stream().filter(t -> !t.getTimestamp().isBefore(start) && !t.getTimestamp().isAfter(end)).toList();
     }
 
     public static List<Transaction> custom(List<Transaction> transactions, LocalDateTime start, LocalDateTime end){
-        return transactions.stream().filter(t -> t.getTimestamp().isBefore(end) && t.getTimestamp().isAfter(start)).collect(Collectors.toList());
+        return transactions.stream().filter(t -> !t.getTimestamp().isBefore(start) && !t.getTimestamp().isAfter(end)).toList();
     }
 
 }

@@ -13,11 +13,6 @@ public class Banker extends Person{
         return "Banker";
     }
 
-    @Override
-    public boolean authenticate(String password) {
-        return false; //CHANGE
-    }
-
     public String getBankerId() {
         return bankerId;
     }

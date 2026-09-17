@@ -1,11 +1,13 @@
 package com.ga.ACME;
 
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 
 public abstract class Card {
     private String cardNumber;
     private Map<String, Double> dailyUsage;
+    private LocalDate lastUsageDate = LocalDate.now();
     public static final String withdraw = "WITHDRAW";
     public static final String transfer = "TRANSFER";
     public static final String ownAccountTransfer = "OWN_ACCOUNT_TRANSFER";
@@ -24,7 +26,17 @@ public abstract class Card {
         return cardNumber;
     }
 
+    private void resetIfNewDay() {
+        LocalDate today = LocalDate.now();
+
+        if (!today.equals(lastUsageDate)) {
+            resetDailyUsage();
+            lastUsageDate = today;
+        }
+    }
+
     private boolean withinLimit(String operation, double amount){
+        resetIfNewDay();
         double usageInADay = dailyUsage.getOrDefault(operation, 0.0);
         double total = usageInADay + amount;
         return getDailyLimits().checkLimit(operation, total);
@@ -45,6 +57,7 @@ public abstract class Card {
     }
 
     public void recordUsage(String operation, double amount){
+        resetIfNewDay();
         dailyUsage.merge(operation, amount, Double::sum);
     }
 
