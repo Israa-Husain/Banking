@@ -147,7 +147,7 @@ public abstract class Account implements IAuthenticatable,ITransactable{
 
 
     public void deposit(double amount, boolean ownAccount) throws CardLimitExceededException, OverdraftLimitException, AccountDeactivatedException,InvalidAmountException {
-        checkAccountActivity();
+        //checkAccountActivity();
         amountValidation(amount);
 
         String operation = ownAccount? Card.ownAccountDeposit : Card.deposit;
@@ -163,7 +163,7 @@ public abstract class Account implements IAuthenticatable,ITransactable{
             unpaidFees-=payment;
             addTransaction(TransactionType.overdraftFee,payment);
         }
-        if(balance>0 && unpaidFees==0){
+        if(balance>=0 && unpaidFees==0){
             isActive = true;
         }
         addTransaction(TransactionType.deposit, amount);
